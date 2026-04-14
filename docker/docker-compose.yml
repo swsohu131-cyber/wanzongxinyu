@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 主数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: wanzongxinyu_postgres
+    environment:
+      POSTGRES_USER: wanzongxinyu
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-wanzongxinyu_secret_2024}
+      POSTGRES_DB: wanzongxinyu
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wanzongxinyu"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wanzongxinyu_network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: wanzongxinyu_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secret_2024}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret_2024}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wanzongxinyu_network
+
+  # Qdrant 向量数据库
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: wanzongxinyu_qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wanzongxinyu_network
+
+  # MinIO 对象存储
+  minio:
+    image: minio/minio:latest
+    container_name: wanzongxinyu_minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minio_secret_2024}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wanzongxinyu_network
+
+  # 后端API服务
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: wanzongxinyu_backend
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://wanzongxinyu:${DB_PASSWORD}@postgres:5432/wanzongxinyu
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_USER}
+      - MINIO_SECRET_KEY=${MINIO_PASSWORD}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - wanzongxinyu_network
+
+  # Nginx 反向代理 + 前端静态文件
+  nginx:
+    image: nginx:alpine
+    container_name: wanzongxinyu_nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ../frontend/dist:/usr/share/nginx/html:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    networks:
+      - wanzongxinyu_network
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  minio_data:
+
+networks:
+  wanzongxinyu_network:
+    driver: bridge

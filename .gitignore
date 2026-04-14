@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build outputs (exclude node_modules only)
+build/
+*.egg-info/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Data (keep structure)
+data/knowledge_base/*
+data/user_data/*
+!data/knowledge_base/.gitkeep
+!data/user_data/.gitkeep
+
+# Docker volumes (don't commit data)
+postgres_data/
+redis_data/
+qdrant_data/
+minio_data/
+
+# SSL certificates
+docker/ssl/
+
+# GitHub Actions (deploy configs we'll add later)
+.github/
